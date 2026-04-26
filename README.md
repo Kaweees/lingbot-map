@@ -99,9 +99,9 @@ Run `demo.py` for interactive 3D visualization via a browser-based [viser](https
 
 We provide four example scenes in `example/` that you can run out of the box:
 ```bash
-# Church scene
+# courthouse scene
 python demo.py --model_path /path/to/lingbot-map-long.pt \
-    --image_folder example/church --mask_sky
+    --image_folder example/courthouse --mask_sky
 ```
 
 
