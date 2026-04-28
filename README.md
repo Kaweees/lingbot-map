@@ -41,7 +41,7 @@ LingBot-Map has focused on:
 # 📋 TODO
 
 - [ ] Release evaluation benchmark
-- [ ] Release demo scripts
+- [x] Release demo scripts
 
 ---
 
@@ -324,6 +324,10 @@ This builds `voxel_morton_ext` and `frustum_cull_ext` in place — both are impo
     --frame_tag --frame_tag_position top_right \
     --save_predictions
 ```
+
+<div align="center">
+  <img src="assets/image.png" width="80%" alt="Final birdeye frame of the 25 000-frame indoor walkthrough rendered by the command above (note the trajectory trail and the '25000 / 25000 Frames' counter in the top-right).">
+</div>
 
 Flag-by-flag rationale:
 
