@@ -262,18 +262,9 @@ python demo.py --model_path /path/to/checkpoint.pt \
 
 `--camera_num_iterations` defaults to `4`; setting it to `1` skips three refinement passes in the camera head (and shrinks its KV cache by 4×).
 
-<!-- # 🎥 Batch Inference & Offline Video Rendering
+# 🎥 Batch Inference & Offline Video Rendering
 
-`demo_render/` produces headless point-cloud flythrough videos from a video or image folder — a two-phase pipeline that shares the same PyTorch / FlashInfer / checkpoint stack as `demo.py`:
-
-```
-Video / Images ──► batch_demo.py (inference) ──► NPZ ──► rgbd_scan_render.py (rendering) ──► MP4
-                   Phase 1: model prediction         Phase 2: point cloud rendering
-```
-
-- **Phase 1** — `batch_demo.py`: run model inference, save per-frame NPZs (depth, poses, images).
-- **Phase 2** — `rgbd_scan_render.py`: build a voxelized point cloud from NPZ, render a camera flythrough with trajectory overlays.
-- **Combined** — `process_videos.sh`: batch-process a folder of videos through both phases, skipping those that already have NPZ output.
+`demo_render/batch_demo.py` is the all-in-one offline entry point: feed it a video or a folder of images and it will run model inference and produce a headless point-cloud flythrough MP4 in a single command. It shares the same PyTorch / FlashInfer / checkpoint stack as `demo.py`.
 
 ## Install (extends the main install)
 
@@ -315,23 +306,31 @@ This builds `voxel_morton_ext` and `frustum_cull_ext` in place — both are impo
 
 ## Quick Start
 
-### Single video (both phases)
+### Single video → flythrough MP4
 
 ```bash
-# Phase 1: inference → per-frame NPZ
 CUDA_VISIBLE_DEVICES=0 python demo_render/batch_demo.py \
     --video_path /path/to/video.mp4 \
     --output_folder /path/to/output/ \
     --model_path /path/to/lingbot-map-long.pt \
     --mode windowed --window_size 64 --fps 20 \
-    --save_predictions --no_render
-
-# Phase 2: NPZ → rendered video
-CUDA_VISIBLE_DEVICES=0 python demo_render/rgbd_scan_render.py \
-    --input_npz /path/to/output/video_name/ \
-    --output_video /path/to/output/video_name.mp4 \
-    --mask_sky --draw_traj --fps 60
+    --mask_sky --camera_vis default
 ```
+
+The output MP4 lands at `<output_folder>/<video_name>_pointcloud.mp4` (the suffix is configurable via `--video_suffix`).
+
+### Image folder → flythrough MP4
+
+```bash
+CUDA_VISIBLE_DEVICES=0 python demo_render/batch_demo.py \
+    --input_folder /path/to/scenes/ \
+    --output_folder /path/to/output/ \
+    --model_path /path/to/lingbot-map-long.pt \
+    --mode streaming \
+    --mask_sky --camera_vis default
+```
+
+`--input_folder` can point at one scene directly or a parent folder containing several scene subdirectories — the script auto-discovers each scene's image folder and renders one MP4 per scene.
 
 ### Batch a folder of videos
 
@@ -341,16 +340,16 @@ Edit the config variables at the top of `demo_render/process_videos.sh`, then:
 bash demo_render/process_videos.sh
 ```
 
-Runs Phase 1 on all videos, then Phase 2. Skips videos that already have NPZ output (safe to re-run).
+Skips videos whose output already exists (safe to re-run).
 
-## Phase 1 — `batch_demo.py`
+## Inference modes
 
 | Mode | Flag | Description |
 |------|------|-------------|
 | **Streaming** | `--mode streaming` | Frame-by-frame with KV cache. Fast, lower memory. |
 | **Windowed** | `--mode windowed` | Sliding window with overlap alignment. Better quality for long sequences. |
 
-Key parameters:
+## Key parameters
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
@@ -363,24 +362,10 @@ Key parameters:
 | `--max_non_keyframe_gap` | 100 | Max consecutive non-keyframes before forcing one |
 | `--mask_sky` | off | Run sky segmentation during inference |
 | `--compile` | off | `torch.compile` CUDA graph acceleration (FlashInfer backend only) |
-| `--save_predictions` | off | Save per-frame NPZ files |
-| `--no_render` | off | Skip video rendering (inference only) |
+| `--camera_vis` | `""` | Camera overlay: `default` / `frustum` / `textured` / `trail` |
+| `--config` | — | YAML preset for render/scene/camera/overlay defaults (CLI flags still override) |
 
-Example — long video with flow-based keyframes:
-
-```bash
-CUDA_VISIBLE_DEVICES=0 python demo_render/batch_demo.py \
-    --video_path video.mp4 --output_folder outputs/ \
-    --model_path lingbot-map-long.pt \
-    --mode windowed --window_size 320 \
-    --flow_threshold 25.0 --max_non_keyframe_gap 100 \
-    --target_frames 4000 --vis_threshold 2.0 \
-    --mask_sky --save_predictions --no_render
-```
-
-## Phase 2 — `rgbd_scan_render.py`
-
-Configuration is loaded in order **YAML → CLI flags** (CLI wins). Presets live in `demo_render/config/`:
+Render defaults can also be seeded from a YAML preset under `demo_render/config/`:
 
 | Preset | Scene Type | Notes |
 |--------|------------|-------|
@@ -388,44 +373,54 @@ Configuration is loaded in order **YAML → CLI flags** (CLI wins). Presets live
 | `config/indoor.yaml` | Indoor | Short depth (10m), tighter camera follow |
 | `config/outdoor_large.yaml` | Large outdoor | Sky masking on, coarser voxels, full render |
 
-```bash
-# YAML preset
-python demo_render/rgbd_scan_render.py \
-    --config demo_render/config/indoor.yaml \
-    --input_npz scene_dir/ --output_video output.mp4
+### Worked example — long indoor walkthrough (~25 000 frames)
 
-# Pure CLI
-python demo_render/rgbd_scan_render.py \
-    --input_npz scene_dir/ --output_video output.mp4 \
-    --voxel_size 0.001 --mask_sky --draw_traj \
-    --back_offset 0.6 --up_offset 0.3 --look_offset 0.3 \
-    --num_workers 16 --fps 60
+```bash
+CUDA_VISIBLE_DEVICES=2 python demo_render/batch_demo.py \
+    --video_path /data/demo_videos室内穿梭.MP4 \
+    --output_folder /data/outputs/室内穿梭/ \
+    --model_path /path/to/lingbot-map.pt \
+    --config demo_render/config/indoor.yaml \
+    --mode windowed --window_size 128 \
+    --keyframe_interval 13 --overlap_keyframes 8 \
+    --max_non_keyframe_gap 100 \
+    --first_k 25000 \
+    --sky_mask_dir /data/outputs/sky_masks \
+    --sky_mask_visualization_dir /data/outputs/sky_mask_viz \
+    --camera_vis default --keyframes_only_points \
+    --frame_tag --frame_tag_position top_right \
+    --save_predictions
 ```
 
-Each run produces (assuming `--output_video output.mp4`):
+Flag-by-flag rationale:
+
+| Flag | Why it's there |
+|---|---|
+| `CUDA_VISIBLE_DEVICES=2` | Pin the run to GPU 2. |
+| `--mode windowed --window_size 128` | Sliding-window inference is required once the sequence exceeds the ~320-frame RoPE training range; each window resets the KV cache. **`window_size` counts KV-cache slots, not actual frames** — the first `num_scale_frames` (=8) slots hold the scale frames and the remaining `128 − 8 = 120` slots hold keyframes. With `keyframe_interval = 13`, one window therefore covers `8 + 120 × 13 = 1568` actual frames. |
+| `--keyframe_interval 13` | Cache only every 13th frame as a keyframe. Non-keyframes still emit per-frame predictions but don't grow the KV cache|
+| `--overlap_keyframes 8` | Adjacent windows share 8 keyframes of context, resolved internally to `max(num_scale_frames, 8 × keyframe_interval) = 8 × 13 = 104` actual frames of overlap. Recommended whenever `keyframe_interval > 1`, to keep cross-window pose alignment stable. |
+| `--max_non_keyframe_gap 100` | Safety cap on consecutive non-keyframes for flow-based keyframe mode; harmless here because `--flow_threshold` is left at 0. |
+| `--first_k 25000` | Only the first 25 000 frames of the source video are processed. |
+| `--config demo_render/config/indoor.yaml` | Seed render/scene/camera/overlay defaults from the indoor preset (short depth, tighter follow cam). Any CLI flag the user explicitly passes still overrides the YAML value. |
+| `--sky_mask_dir` / `--sky_mask_visualization_dir` | Persist sky masks and their side-by-side visualizations to disk so subsequent reruns reuse them instead of re-running ONNX segmentation. (The render pipeline only consumes them when sky masking is enabled — by the YAML preset or by `--mask_sky`.) |
+| `--camera_vis default` | Overlay the trajectory trail + recent-frame points on the rendered video. |
+| `--keyframes_only_points` | Only unproject keyframe depth into the point cloud; non-keyframes still contribute their pose to the trajectory/frustum overlay. Keeps the cloud sparse for very long sequences. |
+| `--frame_tag --frame_tag_position top_right` | Stamp a `<i> / <N> Frames` counter in the top-right corner of the MP4. |
+| `--save_predictions` | Persist per-frame NPZs alongside the MP4. Useful for inspection or for re-rendering with different camera/overlay settings later. |
+
+## Output files
+
+For a given output name (e.g. `<scene>` or `<video_name>`):
 
 | File | Description |
 |------|-------------|
-| `output.mp4` | Rendered point-cloud flythrough |
-| `output_rgb.mp4` | Original RGB frames encoded as video |
-| `output_depth.mp4` | Depth visualization (with `--depth_video`) |
-| `output_config.yaml` | Full config snapshot of this run |
+| `<name>_pointcloud.mp4` | Rendered point-cloud flythrough |
+| `<name>_pointcloud_rgb.mp4` | Original RGB frames encoded as video |
+| `<name>_pointcloud_config.yaml` | Full config snapshot of this run |
+| `batch_results.json` | Per-scene success / duration summary |
 
-## NPZ Input Format
-
-`--input_npz` accepts either a single `.npz` with all frames stacked (`images (S,H,W,3)`, `depth (S,H,W)`, `intrinsic (S,3,3)`, `extrinsic (S,4,4)` world-to-camera, optional `depth_conf`), or a per-frame directory produced by `batch_demo.py --save_predictions`:
-
-```
-scene_name/
-  frame_000000.npz    # per-frame slice of each key
-  frame_000001.npz
-  ...
-  meta.npz            # optional non-sequence metadata
-```
-
-Per-frame files are loaded in parallel and stacked automatically — recommended for 500+ frame sequences.
-
-See [`demo_render/README.md`](demo_render/README.md) for the full parameter reference (scene / preprocess / camera segments / render / overlay / pipeline / gpu), multi-segment camera path examples, and library-style usage. -->
+See [`demo_render/README.md`](demo_render/README.md) for the full parameter reference (scene / preprocess / camera segments / render / overlay / pipeline / gpu), multi-segment camera path examples, and library-style usage.
 
 # 📜 License
 
