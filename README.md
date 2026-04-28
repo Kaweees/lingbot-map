@@ -306,77 +306,12 @@ This builds `voxel_morton_ext` and `frustum_cull_ext` in place — both are impo
 
 ## Quick Start
 
-### Single video → flythrough MP4
-
-```bash
-CUDA_VISIBLE_DEVICES=0 python demo_render/batch_demo.py \
-    --video_path /path/to/video.mp4 \
-    --output_folder /path/to/output/ \
-    --model_path /path/to/lingbot-map-long.pt \
-    --mode windowed --window_size 64 --fps 20 \
-    --mask_sky --camera_vis default
-```
-
-The output MP4 lands at `<output_folder>/<video_name>_pointcloud.mp4` (the suffix is configurable via `--video_suffix`).
-
-### Image folder → flythrough MP4
-
-```bash
-CUDA_VISIBLE_DEVICES=0 python demo_render/batch_demo.py \
-    --input_folder /path/to/scenes/ \
-    --output_folder /path/to/output/ \
-    --model_path /path/to/lingbot-map-long.pt \
-    --mode streaming \
-    --mask_sky --camera_vis default
-```
-
-`--input_folder` can point at one scene directly or a parent folder containing several scene subdirectories — the script auto-discovers each scene's image folder and renders one MP4 per scene.
-
-### Batch a folder of videos
-
-Edit the config variables at the top of `demo_render/process_videos.sh`, then:
-
-```bash
-bash demo_render/process_videos.sh
-```
-
-Skips videos whose output already exists (safe to re-run).
-
-## Inference modes
-
-| Mode | Flag | Description |
-|------|------|-------------|
-| **Streaming** | `--mode streaming` | Frame-by-frame with KV cache. Fast, lower memory. |
-| **Windowed** | `--mode windowed` | Sliding window with overlap alignment. Better quality for long sequences. |
-
-## Key parameters
-
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `--model_path` | required | Path to model checkpoint |
-| `--video_path` / `--input_folder` | — | Input video, or folder of scene directories |
-| `--fps` / `--target_frames` | — | Extraction rate, or target total frames (auto-computes fps) |
-| `--first_k` / `--image_stride` | — / 1 | Only use first K frames / every N-th frame |
-| `--window_size` | 64 | Frames per window (windowed mode) |
-| `--flow_threshold` | 0.0 | Flow-based keyframe threshold in px; `>0` enables adaptive keyframes |
-| `--max_non_keyframe_gap` | 100 | Max consecutive non-keyframes before forcing one |
-| `--mask_sky` | off | Run sky segmentation during inference |
-| `--compile` | off | `torch.compile` CUDA graph acceleration (FlashInfer backend only) |
-| `--camera_vis` | `""` | Camera overlay: `default` / `frustum` / `textured` / `trail` |
-| `--config` | — | YAML preset for render/scene/camera/overlay defaults (CLI flags still override) |
-
-Render defaults can also be seeded from a YAML preset under `demo_render/config/`:
-
-| Preset | Scene Type | Notes |
-|--------|------------|-------|
-| `config/default.yaml` | General | Renders first 200 frames for quick preview |
-| `config/indoor.yaml` | Indoor | Short depth (10m), tighter camera follow |
-| `config/outdoor_large.yaml` | Large outdoor | Sky masking on, coarser voxels, full render |
-
 ### Worked example — long indoor walkthrough (~25 000 frames)
 
+**Dataset:** Download the example video from [robbyant/lingbot-map-demo](https://huggingface.co/datasets/robbyant/lingbot-map-demo/tree/main) on Hugging Face.
+
 ```bash
-CUDA_VISIBLE_DEVICES=2 python demo_render/batch_demo.py \
+    python demo_render/batch_demo.py \
     --video_path /data/demo_videos室内穿梭.MP4 \
     --output_folder /data/outputs/室内穿梭/ \
     --model_path /path/to/lingbot-map.pt \
@@ -396,7 +331,6 @@ Flag-by-flag rationale:
 
 | Flag | Why it's there |
 |---|---|
-| `CUDA_VISIBLE_DEVICES=2` | Pin the run to GPU 2. |
 | `--mode windowed --window_size 128` | Sliding-window inference is required once the sequence exceeds the ~320-frame RoPE training range; each window resets the KV cache. **`window_size` counts KV-cache slots, not actual frames** — the first `num_scale_frames` (=8) slots hold the scale frames and the remaining `128 − 8 = 120` slots hold keyframes. With `keyframe_interval = 13`, one window therefore covers `8 + 120 × 13 = 1568` actual frames. |
 | `--keyframe_interval 13` | Cache only every 13th frame as a keyframe. Non-keyframes still emit per-frame predictions but don't grow the KV cache|
 | `--overlap_keyframes 8` | Adjacent windows share 8 keyframes of context, resolved internally to `max(num_scale_frames, 8 × keyframe_interval) = 8 × 13 = 104` actual frames of overlap. Recommended whenever `keyframe_interval > 1`, to keep cross-window pose alignment stable. |
