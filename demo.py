@@ -362,6 +362,11 @@ def main():
     parser.add_argument("--window_size", type=int, default=64, help="Frames per window (windowed mode)")
     parser.add_argument("--overlap_size", type=int, default=16,
                         help="Overlap between windows in *actual frames*")
+    parser.add_argument("--overlap_keyframes", type=int, default=None,
+                        help="Overlap expressed in *keyframes* (takes precedence over "
+                             "--overlap_size). Converted internally to "
+                             "max(num_scale_frames, overlap_keyframes * keyframe_interval) "
+                             "actual frames.  Recommended when --keyframe_interval > 1.")
 
     # Visualization
     parser.add_argument("--port", type=int, default=8080)
@@ -505,6 +510,7 @@ def main():
                 images,
                 window_size=args.window_size,
                 overlap_size=args.overlap_size,
+                overlap_keyframes=args.overlap_keyframes,
                 num_scale_frames=args.num_scale_frames,
                 keyframe_interval=args.keyframe_interval,
                 output_device=output_device
