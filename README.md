@@ -32,22 +32,52 @@ LingBot-Map has focused on:
 
 ---
 
-# 📰 News
+## 📑 Table of Contents
 
+<details>
+<summary>Click to expand</summary>
+
+- [📰 News](#-news)
+- [📋 TODO](#-todo)
+- [⚙️ Installation](#️-installation)
+- [📦 Model Download](#-model-download)
+- [🚀 Quick Start](#-quick-start)
+- [🎬 Interactive Demo (`demo.py`)](#-interactive-demo-demopy)
+  - [Try the Example Scenes](#try-the-example-scenes)
+  - [Streaming with Keyframe Interval](#streaming-with-keyframe-interval)
+  - [Windowed Inference (for long sequences, >3000 frames)](#windowed-inference-for-long-sequences-3000-frames)
+  - [Sky Masking](#sky-masking)
+  - [Visualization Options](#visualization-options)
+  - [Performance & Memory](#performance--memory)
+- [🎥 Offline Rendering Pipeline (`demo_render/batch_demo.py`)](#-offline-rendering-pipeline-demo_renderbatch_demopy)
+- [📜 License](#-license)
+- [📖 Citation](#-citation)
+- [✨ Acknowledgments](#-acknowledgments)
+
+</details>
+
+---
+
+## 📰 News
+
+- **2026-04-29** — 📹 **Long-video demo released**. We released a very-long-video example (~25 000 frames, 13-minute indoor walkthrough) rendered with the offline pipeline — see [Worked Example](#worked-example--long-indoor-walkthrough-25-000-frames-13-minutes) for the command, flag rationale, and rendered output.
 - **2026-04-27** — 🚀 **LingBot-Map accelerated**. Pull the latest `main` and run `python demo.py --compile ...` or `python gct_profile.py --backend flashinfer --dtype bf16 --compile` to verify on your hardware.
 - **2026-04-24** — Fixed a FlashInfer KV cache bug where `--keyframe_interval > 1` silently cached non-keyframes. **You should now see better pose and reconstruction quality when running with more than 320 frames**.
----
-
-# 📋 TODO
-
-- [ ] Release evaluation benchmark
-- [x] Release demo scripts
 
 ---
 
-# ⚙️ Quick Start
+## 📋 TODO
 
-## Installation
+- ⬜ Release evaluation benchmark
+- ✅ Release demo scripts
+  - ✅ Indoor long-video demo ([Featured indoor walkthrough](#-featured-indoor-walkthrough-25-000-frames-13-minutes))
+  - ⬜ Outdoor long-video demo
+  - ⬜ LingBot-World demo
+  - ⬜ Aerial long-video demo
+
+---
+
+## ⚙️ Installation
 
 **1. Create conda environment**
 
@@ -89,7 +119,7 @@ pip install --index-url https://pypi.org/simple flashinfer-python
 pip install -e ".[vis]"
 ```
 
-# 📦 Model Download
+## 📦 Model Download
 
 | Model Name | Huggingface Repository | ModelScope Repository | Description |
 | :--- | :--- | :--- | :--- |
@@ -99,7 +129,18 @@ pip install -e ".[vis]"
 
 > 🚧 **Coming soon:** we're training an stronger model that supports longer sequences — stay tuned.
 
-# 🎬 Demo
+## 🚀 Quick Start
+
+After installation, run your first scene with one command:
+
+```bash
+python demo.py --model_path /path/to/lingbot-map-long.pt \
+    --image_folder example/courthouse --mask_sky
+```
+
+This launches an interactive [viser](https://github.com/nerfstudio-project/viser) viewer at `http://localhost:8080`. See [Interactive Demo](#-interactive-demo-demopy) below for the full set of scenes and flags, or jump to [Offline Rendering Pipeline](#-offline-rendering-pipeline-demo_renderbatch_demopy) for long-sequence batch rendering.
+
+## 🎬 Interactive Demo (`demo.py`)
 
 Run `demo.py` for interactive 3D visualization via a browser-based [viser](https://github.com/nerfstudio-project/viser) viewer (default `http://localhost:8080`).
 
@@ -162,7 +203,13 @@ https://github.com/user-attachments/assets/6b8daa95-9ed4-40b2-9902-7435779b886d
 
 
 
+#### 🎯 Featured: indoor walkthrough (~25 000 frames, 13 minutes)
+
+
+*Sequence is too long for the interactive viser viewer — this clip was rendered with the [Offline Rendering Pipeline](#-offline-rendering-pipeline-demo_renderbatch_demopy). See that section for the full command.*
+
 We will provide more examples in the follow-up.
+
 ### Streaming with Keyframe Interval
 
 Use `--keyframe_interval` to reduce KV cache memory by only keeping every N-th frame as a keyframe. Non-keyframe frames still produce predictions but are not stored in the cache. This is useful for long sequences which exceed 320 frames (We train with video RoPE on 320 views, so performance degrades when the KV cache stores more than 320 views. Using a keyframe strategy allows inference over longer sequences.).
@@ -238,21 +285,36 @@ python demo.py --model_path /path/to/checkpoint.pt \
 | `--point_size` | `0.00001` | Point cloud point size |
 | `--downsample_factor` | `10` | Spatial downsampling for point cloud display |
 
-### Without FlashInfer (SDPA fallback)
+### Performance & Memory
+
+#### `torch.compile` (`--compile`)
+
+Pass `--compile` to wrap the streaming forward pass in `torch.compile`, which fuses kernels and replays CUDA graphs for a measurable speedup on long sequences.
+
+```bash
+python demo.py --model_path /path/to/lingbot-map-long.pt \
+    --image_folder /path/to/images/ --compile
+```
+
+- **Streaming mode only.** `--compile` is rejected for `--mode windowed`; use the streaming path for compiled runs.
+- **First frame is slow** — `torch.compile` traces and tunes kernels on warmup; per-frame latency drops sharply once the cache is hot.
+- **Benchmarking.** `gct_profile.py --backend flashinfer --dtype bf16 --compile` reports per-frame ms and is the recommended way to verify the speedup on your hardware.
+
+#### Without FlashInfer (SDPA fallback)
 
 ```bash
 python demo.py --model_path /path/to/checkpoint.pt \
     --image_folder /path/to/images/ --use_sdpa
 ```
 
-### Running on Limited GPU Memory
+#### Running on Limited GPU Memory
 
 If you run into out-of-memory issues, try one (or both) of the following:
 
 - **`--offload_to_cpu`** — offload per-frame predictions to CPU during inference (on by default; use `--no-offload_to_cpu` only if you have memory to spare).
 - **`--num_scale_frames 2`** — reduce the number of bidirectional scale frames from the default 8 down to 2, which shrinks the activation peak of the initial scale phase.
 
-### Faster Inference
+#### Faster Inference
 
 Lower the number of iterative refinement steps in the camera head to trade a small amount of pose accuracy for wall-clock speed:
 
@@ -263,11 +325,11 @@ python demo.py --model_path /path/to/checkpoint.pt \
 
 `--camera_num_iterations` defaults to `4`; setting it to `1` skips three refinement passes in the camera head (and shrinks its KV cache by 4×).
 
-# 🎥 Video Rendering (Beta)
+## 🎥 Offline Rendering Pipeline (`demo_render/batch_demo.py`)
 
-`demo_render/batch_demo.py` is the all-in-one offline entry point: feed it a video or a folder of images and it will run model inference and produce a headless point-cloud flythrough MP4 in a single command. It shares the same PyTorch / FlashInfer / checkpoint stack as `demo.py`.
+Use this pipeline when your sequence is too long for the interactive viser viewer — for example, the [indoor walkthrough featured above](#-featured-indoor-walkthrough-25-000-frames-13-minutes). `demo_render/batch_demo.py` is the all-in-one offline entry point: feed it a video or a folder of images and it will run model inference and produce a headless point-cloud flythrough MP4 in a single command. It shares the same PyTorch / FlashInfer / checkpoint stack as `demo.py`.
 
-## Install (extends the main install)
+### Install (extends the main install)
 
 **1. Rendering Python dependencies**
 
@@ -305,9 +367,7 @@ cd demo_render/render_cuda_ext && python setup.py build_ext --inplace && cd ../.
 
 This builds `voxel_morton_ext` and `frustum_cull_ext` in place — both are imported by `rgbd_render` for GPU voxelization and frustum culling.
 
-## Quick Start
-
-### Worked example — long indoor walkthrough (~25 000 frames, 13 minutes)
+### Worked Example — long indoor walkthrough (~25 000 frames, 13 minutes)
 
 **Dataset:** Download the example video from [robbyant/lingbot-map-demo](https://huggingface.co/datasets/robbyant/lingbot-map-demo/tree/main) on Hugging Face.
 
@@ -343,13 +403,13 @@ Flag-by-flag rationale:
 | `--frame_tag --frame_tag_position top_right` | Stamp a `<i> / <N> Frames` counter in the top-right corner of the MP4. |
 | `--save_predictions` | Persist per-frame NPZs alongside the MP4. Useful for inspection or for re-rendering with different camera/overlay settings later. |
 
-## Camera path
+### Camera Path (YAML)
 
 The virtual camera path is described by the `camera.segments` list in the YAML preset passed via `--config`. Edit the YAML to design your own shot — no need to touch CLI flags.
 
 Built-in presets live in `demo_render/config/`: `default.yaml`, `indoor.yaml`, `indoor_overview.yaml`, `outdoor_large.yaml`, `outdoor_large_overview.yaml`, `surrounding.yaml`, `lingbo_world.yaml`. Copy one and edit the `camera:` block.
 
-### YAML structure
+#### YAML structure
 
 ```yaml
 camera:
@@ -374,7 +434,7 @@ camera:
 
 `transition` controls how many frames are blended between adjacent segments; `frames: [0, -1]` means "the whole sequence".
 
-### Available modes
+#### Available modes
 
 | `mode` | Behavior | Tunable fields |
 |---|---|---|
@@ -383,7 +443,7 @@ camera:
 | `static` | Fixed eye + lookat, auto-derived from the segment's start frame. | — |
 | `pivot` | Fixed eye, lookat sweeps along the trajectory. | — |
 
-### Single-shot YAML examples
+#### Single-shot YAML examples
 
 **Pure follow** (most common):
 
@@ -414,7 +474,7 @@ camera:
 
 > Caveat: when `--config` loads a YAML preset, passing **any** segment-shaping CLI flag (`--camera_mode`, `--back_offset`, `--up_offset`, `--look_offset`, `--smooth_window`, `--follow_scale_frames`, `--birdeye_start`, `--birdeye_duration`, `--reveal_height_mult`) discards the YAML's `segments` and rebuilds the camera path from those flags instead. To stay fully YAML-driven, don't pass any of them on the command line.
 
-## Output files
+### Output files
 
 For a given output name (e.g. `<scene>` or `<video_name>`):
 
@@ -425,11 +485,11 @@ For a given output name (e.g. `<scene>` or `<video_name>`):
 | `<name>_pointcloud_config.yaml` | Full config snapshot of this run |
 | `batch_results.json` | Per-scene success / duration summary |
 
-# 📜 License
+## 📜 License
 
 This project is released under the Apache License 2.0. See [LICENSE](LICENSE.txt) file for details.
 
-# 📖 Citation
+## 📖 Citation
 
 ```bibtex
 @article{chen2026geometric,
@@ -440,7 +500,7 @@ This project is released under the Apache License 2.0. See [LICENSE](LICENSE.txt
 }
 ```
 
-# ✨ Acknowledgments
+## ✨ Acknowledgments
 
 We thank Shangzhan Zhang, Jianyuan Wang, Yudong Jin, Christian Rupprecht, and Xun Cao for their helpful discussions and support.
 
