@@ -326,9 +326,8 @@ This builds `voxel_morton_ext` and `frustum_cull_ext` in place — both are impo
     --save_predictions
 ```
 
-<div align="center">
-  <img src="assets/image.png" width="80%" alt="Final birdeye frame of the 25 000-frame indoor walkthrough rendered by the command above (note the trajectory trail and the '25000 / 25000 Frames' counter in the top-right).">
-</div>
+<img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/f4f5e555-22a8-4cc9-b380-dfde5fe1c809" />
+
 
 Flag-by-flag rationale:
 
